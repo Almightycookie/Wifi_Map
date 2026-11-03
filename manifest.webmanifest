@@ -1,0 +1,15 @@
+{
+  "name": "Wi-Fi Map – home coverage planner",
+  "short_name": "Wi-Fi Map",
+  "description": "Map your home, place your router and access points, and see Wi-Fi coverage as a traffic light. Works offline.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
