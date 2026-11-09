@@ -1,5 +1,5 @@
 /* Offline support: cache the app shell so it works with no internet. */
-const CACHE = 'wifimap-v1';
+const CACHE = 'wifimap-v2';
 const ASSETS = [
   './',
   './index.html',

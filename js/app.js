@@ -1238,6 +1238,12 @@
       if (dlg.open) dlg.close();
       dlgForm.innerHTML = html;
       dlg.returnValue = '';
+      // Open file pickers straight from the tap: iPhone Safari ignores pickers opened after the dialog closes.
+      $$('[data-pick]', dlgForm).forEach((b) => (b.onclick = (ev) => {
+        ev.preventDefault();
+        $('#' + b.dataset.pick).click();
+        dlg.close('picked');
+      }));
       const onClose = () => {
         dlg.removeEventListener('close', onClose);
         const data = {};
@@ -1261,13 +1267,13 @@
       <p class="muted">How would you like to start?</p>
       <div class="btn-grid">
         <button class="btn primary" value="demo">Try a demo house</button>
-        <button class="btn" value="image">Upload a floor plan</button>
+        <button class="btn" type="button" data-pick="fileImage">Upload a floor plan</button>
         <button class="btn" value="scan">Import LiDAR scan / CAD</button>
         <button class="btn" value="maps">Use Google Maps</button>
       </div>
       <div class="dlg-actions"><button class="btn" value="blank">Start blank and draw rooms</button></div>`);
+    if (r.action === 'picked') return;
     if (r.action === 'demo') loadDemo();
-    else if (r.action === 'image') $('#fileImage').click();
     else if (r.action === 'scan') scanDialog('scan');
     else if (r.action === 'maps') mapsDialog();
     else { setTool('room'); toast('Drag on the canvas to draw your first room.'); }
@@ -1302,7 +1308,7 @@
         <li>Take a screenshot (include the scale bar, bottom right).</li>
         <li>Upload it here, then use <b>Scale</b> and drag along the map's scale bar (or a known distance).</li>
       </ol>
-      <div class="dlg-actions" style="justify-content:flex-start"><button class="btn primary" value="shot">Upload screenshot</button></div>
+      <div class="dlg-actions" style="justify-content:flex-start"><button class="btn primary" type="button" data-pick="fileImage">Upload screenshot</button></div>
       <hr style="border:0;border-top:1px solid var(--border);margin:16px 0">
       <p><b>Direct download (needs internet + Google Maps API key):</b> the scale is set automatically.</p>
       <div class="row"><label>Address, "lat,lng" or Google Maps link</label><input type="text" name="loc" placeholder="51.5007,-0.1246"></div>
@@ -1311,7 +1317,6 @@
       <label class="check"><input type="checkbox" name="remember" ${savedKey ? 'checked' : ''}> Remember key on this device</label>
       <p class="muted">Needs the "Maps Static API" (and "Geocoding API" for addresses) enabled on your key.</p>
       <div class="dlg-actions"><button class="btn primary" value="dl">Download satellite image</button><button class="btn" value="cancel" formnovalidate>Cancel</button></div>`);
-    if (r.action === 'shot') { $('#fileImage').click(); return; }
     if (r.action !== 'dl') return;
     try {
       if (r.data.remember) localStorage.setItem('wifimap-gkey', r.data.key);
@@ -1345,7 +1350,7 @@
         <li><b>Android</b>: any depth/ARCore scanning app that exports <b>OBJ</b>.</li>
       </ul>
       <p class="muted">The app slices the 3D scan at the height below to find walls, cleans them up and also uses the slice as a background picture so you can fix anything it missed.</p>`}
-      <div class="row"><input type="file" name="file" accept=".obj,.dxf,.json" required></div>
+      <div class="row"><input type="file" name="file" accept=".obj,.dxf,.json,image/*,.png,.jpg,.jpeg" required></div>
       ${kind === 'cad' ? '' : `
       <div class="row"><label>Slice height above floor (m)</label><input type="number" name="slice" value="1.3" step="0.1" min="0.3" max="2.5"></div>
       <div class="row"><label>Up axis</label><select name="up"><option value="auto">Automatic</option><option value="y">Y up</option><option value="z">Z up</option></select></div>
@@ -1358,7 +1363,8 @@
     if (r.action !== 'ok') return;
     const file = r.data.file && r.data.file[0];
     if (!file) { toast('Choose a file first.'); return; }
-    importScanFile(file, r.data);
+    if (isImage(file)) importImageFile(file);
+    else importScanFile(file, r.data);
   }
 
   async function importScanFile(file, o) {
@@ -1418,10 +1424,20 @@
   }
 
   /* ================= file handling ================= */
-  $('#fileImage').onchange = async (e) => {
-    const file = e.target.files[0];
-    e.target.value = '';
-    if (!file) return;
+  const isImage = (file) => /^image\//.test(file.type) || /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif)$/i.test(file.name);
+  /** Import whatever was picked: picture, project file, LiDAR scan or CAD file. */
+  async function importAnyFile(file) {
+    if (isImage(file)) return importImageFile(file);
+    if (/\.(obj|dxf)$/i.test(file.name)) return importScanFile(file, { replace: !floor().walls.length });
+    try {
+      const data = JSON.parse(await Imp.readText(file));
+      if (data && Array.isArray(data.floors)) openProject(data);
+      else importScanFile(file, { replace: !floor().walls.length });
+    } catch (err) {
+      toast('Could not open that file. Use a picture (PNG/JPG), a Wi-Fi Map project, or an OBJ, DXF or RoomPlan scan.');
+    }
+  }
+  async function importImageFile(file) {
     try {
       const img = await Imp.imageFile(file);
       pushUndo();
@@ -1435,14 +1451,14 @@
       setTool('scale');
       toast('Image added. Now drag along something you know the length of to set the scale.');
     } catch (err) { toast(err.message || String(err)); }
-  };
-  $('#fileScan').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) importScanFile(f, { replace: !floor().walls.length }); };
-  $('#fileProject').onchange = async (e) => {
-    const file = e.target.files[0];
-    e.target.value = '';
-    if (!file) return;
-    try { openProject(JSON.parse(await Imp.readText(file))); } catch (err) { toast('Could not open that file: ' + (err.message || err)); }
-  };
+  }
+  for (const id of ['fileImage', 'fileScan', 'fileProject']) {
+    $('#' + id).onchange = (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (file) importAnyFile(file);
+    };
+  }
   function openProject(data) {
     if (!data || !Array.isArray(data.floors)) throw new Error('Not a Wi-Fi Map project file.');
     pushUndo();
